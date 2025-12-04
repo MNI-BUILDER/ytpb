@@ -1,4 +1,4 @@
---// UI Manager + Auto Scroll with Logging + Centered Placement
+--// UI Manager + Auto Scroll (Fixed Paths for Seeds & Gears)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
@@ -7,16 +7,13 @@ local playerGui = player:WaitForChild("PlayerGui")
 
 -- SETTINGS
 local UI_SCALE = 0.95
+local SCROLL_SPEED = 0.15
+local SCROLL_PAUSE = 1.5
 local UI_PADDING = 25
-local SCROLL_SPEED = 0.15 -- scrolling speed
-local SCROLL_PAUSE = 1.5  -- pause at top/bottom
-
--- Names to manage
-local UI_NAMES = { "Gears", "Seeds" }
 
 -- Track UIs & scroll frames
 local tracked = {}
-local scrollFrames = {}
+local managedFrames = {}
 
 local function debugLog(...)
 	print("[UI MANAGER]:", ...)
@@ -25,48 +22,45 @@ end
 -- Wait for Main
 local main = playerGui:WaitForChild("Main")
 
--- Register UI
-local function registerUI(obj)
-	for _, n in ipairs(UI_NAMES) do
-		if obj.Name == n then
-			if not table.find(tracked, obj) then
-				table.insert(tracked, obj)
-				obj.Visible = true
+-- Directly target the ScrollFrames
+local function registerScrollFrame(uiName)
+	local ui = main:FindFirstChild(uiName)
+	if not ui then return end
 
-				local scale = obj:FindFirstChildOfClass("UIScale") or Instance.new("UIScale")
-				scale.Parent = obj
-				scale.Scale = UI_SCALE
+	if not table.find(tracked, ui) then
+		table.insert(tracked, ui)
 
-				-- enable scrolling if there is a ScrollingFrame inside
-				for _, child in ipairs(obj:GetDescendants()) do
-					if child:IsA("ScrollingFrame") then
-						child.ScrollingEnabled = true
-						child.ScrollBarThickness = 8
-						child.AutomaticCanvasSize = Enum.AutomaticSize.Y -- important!
-						
-						table.insert(scrollFrames, child)
-						debugLog("ScrollFrame detected:", child:GetFullName())
-					end
-				end
+		ui.Visible = true
+		local scale = ui:FindFirstChildOfClass("UIScale") or Instance.new("UIScale")
+		scale.Parent = ui
+		scale.Scale = UI_SCALE
 
-				debugLog("Registered UI:", obj.Name)
+		local frame = ui:FindFirstChild("Frame")
+		if frame then
+			local sf = frame:FindFirstChildOfClass("ScrollingFrame")
+			if sf then
+				sf.ScrollingEnabled = true
+				sf.ScrollBarThickness = 8
+
+				local layout = sf:FindFirstChildOfClass("UIListLayout") or sf:FindFirstChildOfClass("UIGridLayout")
+				table.insert(managedFrames, {frame = sf, listLayout = layout})
+
+				debugLog("Attached scroll frame:", sf:GetFullName())
 			end
 		end
+
+		debugLog("Registered UI:", ui.Name)
 	end
 end
 
--- Initial find
-for _, child in ipairs(main:GetChildren()) do
-	registerUI(child)
-end
+-- Register both
+registerScrollFrame("Gears")
+registerScrollFrame("Seeds")
 
--- Listen for future UI spawning
-main.ChildAdded:Connect(registerUI)
-
--- Corner layout (slightly tilted to middle horizontally)
+-- Corner layout (slightly tilted horizontally)
 local corners = {
-	{anchor = Vector2.new(0.5, 0.5), pos = function(view) return UDim2.new(0.3, 0, 0.5, 0) end}, -- left-middle tilt
-	{anchor = Vector2.new(0.5, 0.5), pos = function(view) return UDim2.new(0.7, 0, 0.5, 0) end}, -- right-middle tilt
+	{anchor = Vector2.new(0.5, 0.5), pos = function(view) return UDim2.new(0.3, 0, 0.5, 0) end},
+	{anchor = Vector2.new(0.5, 0.5), pos = function(view) return UDim2.new(0.7, 0, 0.5, 0) end},
 }
 
 -- Resize & Position
@@ -90,23 +84,33 @@ end
 updatePlacement()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updatePlacement)
 
--- Auto Scroll
+-- ---------- Auto Scroll ----------
 local scrollDir = 1
 local scrollProgress = 0
 local isPaused = false
 local pauseTimer = 0
 
-local function getMaxScroll(sf)
-	if not sf then return 0 end
-	if sf.AbsoluteSize.Y <= 0 then return 0 end
-	return math.max(0, sf.CanvasSize.Y.Offset - sf.AbsoluteSize.Y)
+local function getContentHeight(entry)
+	if entry.listLayout then
+		return entry.listLayout.AbsoluteContentSize.Y
+	end
+	-- fallback
+	return entry.frame.CanvasSize.Y.Offset
+end
+
+local function getMaxScroll(entry)
+	local f = entry.frame
+	if not f or f.AbsoluteSize.Y <= 0 then return 0 end
+	local contentHeight = getContentHeight(entry)
+	if not contentHeight then return 0 end
+	return math.max(0, contentHeight - f.AbsoluteSize.Y)
 end
 
 RunService.RenderStepped:Connect(function(dt)
-	for _, sf in ipairs(scrollFrames) do
-		if sf and sf.Parent and sf.AbsoluteSize.Y > 0 then
-			local maxScroll = getMaxScroll(sf)
-			debugLog("MaxScroll for", sf.Name, "=", maxScroll)
+	for _, entry in ipairs(managedFrames) do
+		local f = entry.frame
+		if f and f.Parent and f.AbsoluteSize.Y > 0 then
+			local maxScroll = getMaxScroll(entry)
 			if maxScroll > 0 then
 				if isPaused then
 					pauseTimer += dt
@@ -114,7 +118,7 @@ RunService.RenderStepped:Connect(function(dt)
 						isPaused = false
 						pauseTimer = 0
 						scrollDir *= -1
-						debugLog("Scroll direction changed to", scrollDir)
+						debugLog(f.Name, "Scroll direction:", scrollDir)
 					end
 				else
 					scrollProgress += dt * scrollDir * SCROLL_SPEED
@@ -128,10 +132,11 @@ RunService.RenderStepped:Connect(function(dt)
 				end
 
 				local y = math.clamp(scrollProgress * maxScroll, 0, maxScroll)
-				sf.CanvasPosition = Vector2.new(0, y)
+				f.CanvasPosition = Vector2.new(0, y)
+				debugLog(f.Name, "Scrolling to Y:", y, "MaxScroll:", maxScroll)
 			end
 		end
 	end
 end)
 
-debugLog("UI Manager with scrolling and tilt loaded!")
+debugLog("UI Manager with fixed scroll paths loaded!")
