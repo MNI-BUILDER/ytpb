@@ -1,4 +1,4 @@
---// Smart UI Manager (Updated: Bigger, Centered, Scroll Enabled)
+--// UI Manager + Auto Scroll with Logging + Centered Placement
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
@@ -8,7 +8,7 @@ local playerGui = player:WaitForChild("PlayerGui")
 -- SETTINGS
 local UI_SCALE = 0.95
 local UI_PADDING = 25
-local SCROLL_SPEED = 0.15 -- speed of scroll
+local SCROLL_SPEED = 0.15 -- scrolling speed
 local SCROLL_PAUSE = 1.5  -- pause at top/bottom
 
 -- Names to manage
@@ -18,8 +18,8 @@ local UI_NAMES = { "Gears", "Seeds" }
 local tracked = {}
 local scrollFrames = {}
 
-local function debug(...)
-	-- print("[UI MANAGER]:", ...)
+local function debugLog(...)
+	print("[UI MANAGER]:", ...)
 end
 
 -- Wait for Main
@@ -42,11 +42,14 @@ local function registerUI(obj)
 					if child:IsA("ScrollingFrame") then
 						child.ScrollingEnabled = true
 						child.ScrollBarThickness = 8
+						child.AutomaticCanvasSize = Enum.AutomaticSize.Y -- important!
+						
 						table.insert(scrollFrames, child)
+						debugLog("ScrollFrame detected:", child:GetFullName())
 					end
 				end
 
-				debug("Registered:", obj.Name)
+				debugLog("Registered UI:", obj.Name)
 			end
 		end
 	end
@@ -60,10 +63,10 @@ end
 -- Listen for future UI spawning
 main.ChildAdded:Connect(registerUI)
 
--- Corner layout (vertical offset moved to middle-ish)
+-- Corner layout (slightly tilted to middle horizontally)
 local corners = {
-	{anchor = Vector2.new(0, 0.5), pos = function(view) return UDim2.new(0, UI_PADDING, 0.5, 0) end}, -- Left Center
-	{anchor = Vector2.new(1, 0.5), pos = function(view) return UDim2.new(1, -UI_PADDING, 0.5, 0) end}, -- Right Center
+	{anchor = Vector2.new(0.5, 0.5), pos = function(view) return UDim2.new(0.3, 0, 0.5, 0) end}, -- left-middle tilt
+	{anchor = Vector2.new(0.5, 0.5), pos = function(view) return UDim2.new(0.7, 0, 0.5, 0) end}, -- right-middle tilt
 }
 
 -- Resize & Position
@@ -73,8 +76,8 @@ local function updatePlacement()
 	if not cam then return end
 	local view = cam.ViewportSize
 
-	local width = math.floor(view.X * 0.45)   -- bigger
-	local height = math.floor(view.Y * 0.6)   -- bigger + more center
+	local width = math.floor(view.X * 0.45)
+	local height = math.floor(view.Y * 0.6)
 
 	for i, ui in ipairs(tracked) do
 		local layout = corners[((i - 1) % #corners) + 1]
@@ -93,17 +96,17 @@ local scrollProgress = 0
 local isPaused = false
 local pauseTimer = 0
 
-local function getMaxScroll(f)
-	if not f then return 0 end
-	if f.AbsoluteSize.Y <= 0 then return 0 end
-	local contentHeight = f.CanvasSize.Y.Offset + f.CanvasSize.Y.Scale * f.AbsoluteSize.Y
-	return math.max(0, contentHeight - f.AbsoluteSize.Y)
+local function getMaxScroll(sf)
+	if not sf then return 0 end
+	if sf.AbsoluteSize.Y <= 0 then return 0 end
+	return math.max(0, sf.CanvasSize.Y.Offset - sf.AbsoluteSize.Y)
 end
 
 RunService.RenderStepped:Connect(function(dt)
 	for _, sf in ipairs(scrollFrames) do
 		if sf and sf.Parent and sf.AbsoluteSize.Y > 0 then
 			local maxScroll = getMaxScroll(sf)
+			debugLog("MaxScroll for", sf.Name, "=", maxScroll)
 			if maxScroll > 0 then
 				if isPaused then
 					pauseTimer += dt
@@ -111,6 +114,7 @@ RunService.RenderStepped:Connect(function(dt)
 						isPaused = false
 						pauseTimer = 0
 						scrollDir *= -1
+						debugLog("Scroll direction changed to", scrollDir)
 					end
 				else
 					scrollProgress += dt * scrollDir * SCROLL_SPEED
@@ -130,4 +134,4 @@ RunService.RenderStepped:Connect(function(dt)
 	end
 end)
 
-debug("NEW UI Manager with scrolling loaded!")
+debugLog("UI Manager with scrolling and tilt loaded!")
