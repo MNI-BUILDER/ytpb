@@ -7,7 +7,7 @@ local playerGui = player:WaitForChild("PlayerGui")
 
 -- SETTINGS
 local UI_SCALE = 0.95
-local SCROLL_SPEED = 0.15
+local SCROLL_SPEED = 0.06
 local SCROLL_PAUSE = 1.5
 local UI_PADDING = 25
 
